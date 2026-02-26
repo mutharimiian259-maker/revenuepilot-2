@@ -83,10 +83,4 @@ Ianoh Mbae
 
 ## ⭐ License
 
-This project is private unless explicitly stated otherwise.
-
----
-
-## ⚠️ Important Notice
-
-Do not expose authentication keys, database secrets, or payment credentials inside this repository.
+This project is private unless explicitly stated otherwise 
