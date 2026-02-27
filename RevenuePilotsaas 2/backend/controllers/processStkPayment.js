@@ -1,69 +1,125 @@
 const supabase = require("../config/supabase");
+const { createLedgerEntries } = require("./ledgerService");
 const { createAuditLog } = require("./auditService");
+const { runFraudChecks } = require("./fraudService");
 
 async function processStkPayment(transactionId) {
 
-    // 🔒 Lock transaction first
-    const { data: transaction, error } = await supabase
+    /*
+    =============================
+    Atomic Transaction Lock
+    =============================
+    */
+
+    const { data: transaction, error: lockError } = await supabase
         .from("stk_transactions")
-        .update({ processing_lock: true })
+        .update({
+            processing_lock: true,
+            updated_at: new Date()
+        })
         .eq("id", transactionId)
         .eq("ledger_posted", false)
+        .eq("processing_lock", false)
         .select()
-        .single();
+        .maybeSingle();
 
-    if (error || !transaction) {
-        console.log("Already processed or locked");
+    if (!transaction || lockError) {
+        console.log("Transaction already processed or locked.");
         return;
     }
 
     try {
 
+        /*
+        =============================
+        Only Process Successful Payment
+        =============================
+        */
+
         if (transaction.status !== "SUCCESS") {
+            await releaseLock(transactionId);
             return;
         }
 
-        // ✅ Double-entry example
-        await supabase.from("ledger_entries").insert([
-            {
-                business_id: transaction.business_id,
-                account_type: "cash",
-                amount: transaction.amount,
-                entry_type: "DEBIT"
-            },
-            {
-                business_id: transaction.business_id,
-                account_type: "revenue",
-                amount: transaction.amount,
-                entry_type: "CREDIT"
-            }
-        ]);
+        /*
+        =============================
+        Fraud Detection Layer
+        =============================
+        */
 
-        // ✅ Mark ledger as posted
-        await supabase
+        const flags = await runFraudChecks(transaction);
+
+        if (flags && flags.length > 0) {
+
+            await supabase
+                .from("stk_transactions")
+                .update({
+                    status: "FLAGGED",
+                    fraud_flags: flags,
+                    processing_lock: false
+                })
+                .eq("id", transactionId);
+
+            await createAuditLog(
+                transaction.business_id,
+                "PAYMENT_FLAGGED",
+                flags.join(", ")
+            );
+
+            return;
+        }
+
+        /*
+        =============================
+        Ledger Posting
+        =============================
+        */
+
+        await createLedgerEntries(transaction);
+
+        /*
+        =============================
+        Finalize Transaction
+        =============================
+        */
+
+        const { error: updateError } = await supabase
             .from("stk_transactions")
             .update({
                 ledger_posted: true,
-                processing_lock: false
+                processing_lock: false,
+                completed_at: new Date()
             })
-            .eq("id", transactionId);
+            .eq("id", transactionId)
+            .eq("ledger_posted", false);
+
+        if (updateError) {
+            throw new Error("Failed to finalize transaction");
+        }
 
         await createAuditLog(
             transaction.business_id,
             "STK_PAYMENT_SUCCESS",
-            `Ledger posted for transaction ${transactionId}`
+            `Transaction ${transactionId} ledger posted`
         );
+
+        console.log("Payment processed successfully.");
 
     } catch (err) {
 
-        // ❌ Unlock on failure
-        await supabase
-            .from("stk_transactions")
-            .update({ processing_lock: false })
-            .eq("id", transactionId);
+        console.error("Processing failed:", err.message);
+
+        await releaseLock(transactionId);
 
         throw err;
     }
+}
+
+async function releaseLock(transactionId) {
+    await supabase
+        .from("stk_transactions")
+        .update({ processing_lock: false })
+        .eq("id", transactionId);
 }
 
 module.exports = { processStkPayment };
