@@ -1,0 +1,77 @@
+body{
+    font-family: system-ui, sans-serif;
+    background:#f8fbff;
+    margin:0;
+}
+
+/* Navigation */
+
+nav{
+    display:flex;
+    justify-content:space-between;
+    padding:18px 60px;
+    background:white;
+    box-shadow:0 2px 12px rgba(0,0,0,0.04);
+}
+
+/* Hero */
+
+.hero{
+    text-align:center;
+    padding:120px 40px;
+}
+
+/* Dashboard Grid */
+
+.dashboard-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:24px;
+    padding:40px;
+}
+
+/* Cards */
+
+.card{
+    background:white;
+    padding:28px;
+    border-radius:20px;
+    box-shadow:0 2px 16px rgba(0,0,0,0.04);
+    transition:0.3s;
+}
+
+.card:hover{
+    transform:translateY(-3px);
+}
+
+/* Buttons */
+
+.btn{
+    padding:14px 26px;
+    border-radius:18px;
+    border:none;
+    font-weight:600;
+    cursor:pointer;
+    transition:0.3s;
+}
+
+.btn-primary{
+    background:#0d6efd;
+    color:white;
+}
+
+.btn:hover{
+    transform:translateY(-2px);
+}
+
+/* Mobile */
+
+@media(max-width:768px){
+    nav{
+        padding:18px;
+    }
+
+    .hero{
+        padding:80px 20px;
+    }
+}

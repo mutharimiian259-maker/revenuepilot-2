@@ -5,96 +5,156 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 
+/*
+=====================================
+Routes
+=====================================
+*/
+
 const authRoutes = require("./routes/authRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
-const stkRoutes = require("./routes/stkRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+
+/*
+=====================================
+Background Jobs / Workers
+=====================================
+*/
+
+try {
+    require("./jobs/subscriptionJob");
+    require("./workers/paymentWorker");
+} catch (err) {
+    console.error("Worker initialization failed:", err.message);
+}
+
+/*
+=====================================
+Express App Initialization
+=====================================
+*/
 
 const app = express();
 
 /*
-==============================
+=====================================
 Security Middleware
-==============================
+=====================================
 */
 
 // Secure HTTP headers
 app.use(helmet());
 
-// Production-safe CORS
+// CORS
 app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "*",
-    credentials: true,
-  })
+    cors({
+        origin: process.env.FRONTEND_URL || "*",
+        credentials: true,
+    })
 );
 
-// Logging (disable in production if needed)
+// Request logging
 if (process.env.NODE_ENV !== "production") {
-  app.use(morgan("dev"));
+    app.use(morgan("dev"));
 }
 
-// JSON body parsing
+// JSON parsing
 app.use(express.json({ limit: "10kb" }));
 
 /*
-==============================
-API Routes
-==============================
+=====================================
+Async Route Wrapper
+=====================================
 */
 
-app.use("/api/auth", authRoutes);
-app.use("/api/analytics", analyticsRoutes);
-app.use("/api/stk", stkRoutes);
+const asyncHandler = (fn) => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+};
 
 /*
-==============================
-Health Check
-==============================
+=====================================
+API Routes
+=====================================
+*/
+
+app.use("/api/auth", asyncHandler(authRoutes));
+app.use("/api/analytics", asyncHandler(analyticsRoutes));
+app.use("/api/payments", asyncHandler(paymentRoutes));
+
+/*
+=====================================
+Health Endpoint
+=====================================
 */
 
 app.get("/", (req, res) => {
-  res.status(200).json({
-    status: "success",
-    message: "RevenuePilot Backend Running",
-  });
+    res.status(200).json({
+        status: "success",
+        message: "RevenuePilot Backend Running",
+    });
 });
 
 /*
-==============================
+=====================================
 404 Handler
-==============================
+=====================================
 */
 
 app.use((req, res) => {
-  res.status(404).json({
-    status: "error",
-    message: "Route not found",
-  });
+    res.status(404).json({
+        status: "error",
+        message: "Route not found",
+    });
 });
 
 /*
-==============================
+=====================================
 Global Error Handler
-==============================
+=====================================
 */
 
 app.use((err, req, res, next) => {
-  console.error("SERVER ERROR:", err);
+    console.error("SERVER ERROR:", err);
 
-  res.status(500).json({
-    status: "error",
-    message: "Internal server error",
-  });
+    res.status(500).json({
+        status: "error",
+        message: "Internal server error",
+    });
 });
 
 /*
-==============================
+=====================================
+Crash & Promise Protection
+=====================================
+*/
+
+process.on("uncaughtException", (err) => {
+    console.error("UNCAUGHT EXCEPTION:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+    console.error("UNHANDLED REJECTION:", reason);
+});
+
+/*
+=====================================
+Graceful Shutdown
+=====================================
+*/
+
+process.on("SIGTERM", () => {
+    console.log("RevenuePilot shutting down gracefully");
+    process.exit(0);
+});
+
+/*
+=====================================
 Start Server
-==============================
+=====================================
 */
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`RevenuePilot server active on port ${PORT}`);
+    console.log(`RevenuePilot backend running on port ${PORT}`);
 });

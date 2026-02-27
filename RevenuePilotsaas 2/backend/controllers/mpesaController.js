@@ -1,90 +1,102 @@
 const supabase = require("../config/supabase");
-const { generateAccessToken } = require("../services/mpesaService");
-const { createLedgerEntries } = require("../services/ledgerService");
+const { processStkPayment } = require("../services/paymentService");
+const { verifyCallbackSignature } = require("../services/securityService");
 
-exports.initiateSTK = async (req,res)=>{
+/*
+=====================================
+M-Pesa STK Callback Controller
+=====================================
+This handles Safaricom payment result.
+It must:
+1. Verify webhook signature
+2. Extract callback safely
+3. Update transaction status
+4. Trigger ledger processing on success
+=====================================
+*/
 
-    const { phone, amount, business_id } = req.body;
+async function stkCallback(req, res) {
+    try {
 
-    const token = await generateAccessToken();
+        /* ==============================
+           1️⃣ Verify Webhook Signature
+        ============================== */
 
-    const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:.TZ]/g,"")
-        .slice(0,14);
+        const signature = req.headers["x-webhook-signature"];
 
-    const password = Buffer.from(
-        process.env.MPESA_SHORTCODE +
-        process.env.MPESA_PASSKEY +
-        timestamp
-    ).toString("base64");
-
-    const stkResponse = await fetch(
-        "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
-        {
-            method:"POST",
-            headers:{
-                Authorization:`Bearer ${token}`,
-                "Content-Type":"application/json"
-            },
-            body:JSON.stringify({
-                BusinessShortCode:process.env.MPESA_SHORTCODE,
-                Password:password,
-                Timestamp:timestamp,
-                TransactionType:"CustomerPayBillOnline",
-                Amount:amount,
-                PartyA:phone,
-                PartyB:process.env.MPESA_SHORTCODE,
-                PhoneNumber:phone,
-                CallBackURL:process.env.MPESA_CALLBACK_URL,
-                AccountReference:"RevenuePilot",
-                TransactionDesc:"Business Payment"
-            })
+        if (!signature) {
+            return res.status(403).json({ message: "Missing webhook signature" });
         }
-    );
 
-    const { data } = await supabase
-        .from("stk_transactions")
-        .insert([{
-            phone,
-            amount,
-            business_id,
-            status:"PENDING"
-        }])
-        .select()
-        .single();
+        const computedSignature = verifyCallbackSignature(
+            req.body,
+            process.env.WEBHOOK_SECRET
+        );
 
-    res.json(data);
-};
+        if (signature !== computedSignature) {
+            return res.status(403).json({ message: "Invalid callback signature" });
+        }
 
-exports.callback = async (req,res)=>{
+        /* ==============================
+           2️⃣ Validate Callback Format
+        ============================== */
 
-    const callbackData = req.body;
+        const body = req.body;
 
-    const resultCode =
-        callbackData.Body.stkCallback.ResultCode;
+        if (!body?.Body?.stkCallback) {
+            return res.status(400).json({ message: "Invalid callback format" });
+        }
 
-    const merchantRequestID =
-        callbackData.Body.stkCallback.MerchantRequestID;
+        const callback = body.Body.stkCallback;
 
-    const status = resultCode === 0 ? "SUCCESS" : "FAILED";
+        const merchantRequestID = callback.MerchantRequestID;
+        const resultCode = callback.ResultCode;
+        const resultDesc = callback.ResultDesc;
 
-    const { data } = await supabase
-        .from("stk_transactions")
-        .update({ status })
-        .eq("merchant_request_id", merchantRequestID)
-        .select()
-        .single();
+        if (!merchantRequestID) {
+            return res.status(400).json({ message: "Missing MerchantRequestID" });
+        }
 
-    if(status === "SUCCESS"){
-        await createLedgerEntries(data);
+        /* ==============================
+           3️⃣ Determine Payment Status
+        ============================== */
 
-        await supabase.from("payment_audit_logs")
-            .insert([{
-                transaction_id:data.id,
-                status:"SUCCESS"
-            }]);
+        const status = resultCode === 0 ? "SUCCESS" : "FAILED";
+
+        /* ==============================
+           4️⃣ Update Transaction Record
+        ============================== */
+
+        const { data, error } = await supabase
+            .from("stk_transactions")
+            .update({
+                status,
+                result_desc: resultDesc,
+                updated_at: new Date()
+            })
+            .eq("merchant_request_id", merchantRequestID)
+            .select()
+            .single();
+
+        if (error || !data) {
+            console.error("Transaction update error:", error);
+            return res.status(500).json({ message: "Transaction update failed" });
+        }
+
+        /* ==============================
+           5️⃣ Trigger Ledger Engine
+        ============================== */
+
+        if (status === "SUCCESS") {
+            await processStkPayment(data.id);
+        }
+
+        return res.status(200).json({ message: "Callback processed successfully" });
+
+    } catch (err) {
+        console.error("Callback processing error:", err);
+        return res.status(500).json({ message: "Internal server error" });
     }
+}
 
-    res.sendStatus(200);
-};
+module.exports = { stkCallback };

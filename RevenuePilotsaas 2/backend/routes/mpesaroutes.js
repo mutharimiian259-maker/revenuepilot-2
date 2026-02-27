@@ -1,7 +1,16 @@
-const router = require("express").Router();
-const mpesaController = require("../controllers/mpesaController");
+const express = require("express");
+const router = express.Router();
 
-router.post("/stk", mpesaController.initiateSTK);
-router.post("/callback", mpesaController.callback);
+const paymentController = require("../controllers/paymentController");
+
+// =============================
+// STK Initiation Route
+// =============================
+router.post("/stk", paymentController.initiateSTK);
+
+// =============================
+// STK Callback Route
+// =============================
+router.post("/callback", paymentController.stkCallback);
 
 module.exports = router;

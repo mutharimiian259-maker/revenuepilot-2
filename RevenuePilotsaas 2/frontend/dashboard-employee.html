@@ -7,8 +7,9 @@
 
 <body>
 
-<nav>
+<nav style="display:flex;justify-content:space-between;align-items:center;padding:10px 20px;">
 <h2>STK Payment Panel</h2>
+<button id="logoutBtn" class="btn">Logout</button>
 </nav>
 
 <div class="dashboard-grid">
@@ -17,21 +18,67 @@
 
 <h3>Request Payment</h3>
 
-<input id="phone" placeholder="Phone Number"
+<form id="stkForm">
+
+<input id="phone" placeholder="Phone Number" required
 style="width:100%;padding:12px;margin:10px 0;border-radius:12px;border:1px solid #ddd">
 
-<input id="amount" placeholder="Amount"
+<input id="amount" type="number" placeholder="Amount" required
 style="width:100%;padding:12px;margin:10px 0;border-radius:12px;border:1px solid #ddd">
 
-<button class="btn btn-primary" onclick="requestStk()">
+<button type="submit" class="btn btn-primary">
 Submit Payment Request
 </button>
 
-</div>
+</form>
 
 </div>
 
-<script src="js/stk.js"></script>
+</div>
+
+<script type="module">
+import { protectPage, logout } from "./js/auth.js";
+import API_BASE from "./config.js";
+
+// Protect page
+await protectPage();
+
+document.getElementById("logoutBtn").addEventListener("click", logout);
+
+document.getElementById("stkForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const phone = document.getElementById("phone").value;
+    const amount = document.getElementById("amount").value;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/payments/stk`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                phone,
+                amount,
+                business_id: "REPLACE_WITH_REAL_BUSINESS_ID"
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            alert(data.message || "Payment request failed");
+            return;
+        }
+
+        alert("STK request sent successfully");
+
+    } catch (err) {
+        console.error(err);
+        alert("Network error occurred");
+    }
+});
+</script>
 
 </body>
 </html>

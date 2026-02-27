@@ -1,27 +1,112 @@
-async function login(){
+// ================================
+// Supabase Client Initialization
+// ================================
 
-    const email = document.getElementById("email").value;
-    const password = document.getElementById("password").value;
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-    const res = await fetch("http://localhost:5000/api/auth/login",{
-        method:"POST",
-        headers:{
-            "Content-Type":"application/json"
-        },
-        body:JSON.stringify({email,password})
-    });
+// ⚠️ Replace with your real values
+const SUPABASE_URL = "https://xmqgjunmtwvmatysiyjf.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtcWdqdW5tdHd2bWF0eXNpeWpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMzY0MjAsImV4cCI6MjA4NjkxMjQyMH0.lyl6brobaXGCYyfP7k3BV3zcAKItwaH69AJr5YLUKLk";
 
-    const data = await res.json();
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if(data?.session?.access_token){
 
-        localStorage.setItem(
-            "token",
-            data.session.access_token
-        );
+// ================================
+// Register
+// ================================
+export async function register(email, password) {
+    try {
 
-        window.location.href="/dashboard-owner.html";
-    }else{
-        alert("Login failed");
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password
+        });
+
+        if (error) {
+            alert(error.message);
+            return;
+        }
+
+        alert("Registration successful. Check your email if confirmation is required.");
+
+        window.location.href = "/login.html";
+
+    } catch (err) {
+        console.error("Register error:", err);
+        alert("Unexpected error occurred");
+    }
+}
+
+
+// ================================
+// Login
+// ================================
+export async function login(email, password) {
+    try {
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password
+        });
+
+        if (error) {
+            alert(error.message);
+            return;
+        }
+
+        // ✅ DO NOT STORE TOKENS MANUALLY
+        // Supabase automatically handles session securely
+
+        window.location.href = "/dashboard.html";
+
+    } catch (err) {
+        console.error("Login error:", err);
+        alert("Unexpected error occurred");
+    }
+}
+
+
+// ================================
+// Google OAuth Login
+// ================================
+export async function loginWithGoogle() {
+    try {
+
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+                redirectTo: window.location.origin + "/dashboard.html"
+            }
+        });
+
+        if (error) {
+            alert(error.message);
+        }
+
+    } catch (err) {
+        console.error("OAuth error:", err);
+        alert("Unexpected OAuth error");
+    }
+}
+
+
+// ================================
+// Logout
+// ================================
+export async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/login.html";
+}
+
+
+// ================================
+// Protect Dashboard Pages
+// ================================
+export async function protectPage() {
+
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+        window.location.href = "/login.html";
     }
 }
