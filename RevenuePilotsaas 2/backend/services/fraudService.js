@@ -1,35 +1,60 @@
 const supabase = require("../config/supabase");
 
+/*
+=====================================
+Enterprise Fraud Detection Engine
+=====================================
+*/
+
 async function runFraudChecks(transaction) {
+
+    if (!transaction) return [];
 
     const flags = [];
 
-    // Rule 1: High Amount Spike
-    if (transaction.amount > 100000) {
+    const amount = Number(transaction.amount);
+
+    /*
+    ===============================
+    High Amount Spike Detection
+    ===============================
+    */
+
+    if (amount > 100000) {
         flags.push("HIGH_AMOUNT");
     }
 
-    // Rule 2: Too Many Payments in 1 Minute
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    /*
+    ===============================
+    Rate Spike Detection (1 Minute Window)
+    ===============================
+    */
 
-    const { count } = await supabase
+    const oneMinuteAgo = new Date(Date.now() - 60000);
+
+    const { count: paymentCount } = await supabase
         .from("stk_transactions")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("business_id", transaction.business_id)
         .gte("created_at", oneMinuteAgo);
 
-    if (count > 5) {
+    if (paymentCount && paymentCount > 5) {
         flags.push("RATE_SPIKE");
     }
 
-    // Rule 3: Repeated Phone Number Rapidly
+    /*
+    ===============================
+    Phone Spam Detection
+    ===============================
+    */
+
     const { count: phoneCount } = await supabase
         .from("stk_transactions")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("phone", transaction.phone)
         .gte("created_at", oneMinuteAgo);
 
-    if (phoneCount > 3) {
+    if (phoneCount && phoneCount > 3) {
         flags.push("PHONE_SPAM");
     }
 

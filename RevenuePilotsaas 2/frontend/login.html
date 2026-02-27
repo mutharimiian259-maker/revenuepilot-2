@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 
-<body style="display:flex;justify-content:center;align-items:center;height:100vh;">
+<body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#f8fbff;">
 
 <div class="card" style="width:360px">
 
@@ -13,10 +13,18 @@
 
 <form id="loginForm">
 
-<input id="email" type="email" placeholder="Email" required
+<input
+id="email"
+type="email"
+placeholder="Email"
+required
 style="width:100%;padding:12px;margin:10px 0;border-radius:12px;border:1px solid #ddd">
 
-<input id="password" type="password" placeholder="Password" required
+<input
+id="password"
+type="password"
+placeholder="Password"
+required
 style="width:100%;padding:12px;margin:10px 0;border-radius:12px;border:1px solid #ddd">
 
 <button type="submit" class="btn btn-primary" style="width:100%">
@@ -25,7 +33,7 @@ Login
 
 </form>
 
-<button id="googleBtn" class="btn" style="width:100%;margin-top:10px;">
+<button id="googleBtn" class="btn" style="width:100%;margin-top:12px;">
 Login with Google
 </button>
 
@@ -34,7 +42,7 @@ Login with Google
 <script type="module">
 import { login, loginWithGoogle } from "./js/auth.js";
 
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
+document.getElementById("loginForm").addEventListener("submit", async (e)=>{
     e.preventDefault();
 
     const email = document.getElementById("email").value;
@@ -47,4 +55,4 @@ document.getElementById("googleBtn").addEventListener("click", loginWithGoogle);
 </script>
 
 </body>
-</html>s
+</html>

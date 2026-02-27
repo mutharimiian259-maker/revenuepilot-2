@@ -3,24 +3,24 @@ const { createAuditLog } = require("./auditService");
 const { runFraudChecks } = require("./fraudService");
 
 /*
-=====================================
-processStkPayment (Enterprise Version)
-=====================================
-Responsibilities:
-1. Atomic lock transaction
-2. Prevent duplicate ledger posting
-3. Run fraud checks
-4. Post double-entry ledger
-5. Mark transaction completed
-6. Unlock safely on failure
-=====================================
+========================================
+ENTERPRISE STK PAYMENT PROCESSOR
+========================================
+Features:
+✔ Atomic lock
+✔ Fraud detection
+✔ Idempotent ledger posting
+✔ Double-entry accounting
+✔ Safe unlock on failure
+✔ Database-level duplicate protection
+========================================
 */
 
 async function processStkPayment(transactionId) {
 
-    // ==============================
+    // =====================================
     // 1️⃣ Atomic Lock
-    // ==============================
+    // =====================================
 
     const { data: transaction, error: lockError } = await supabase
         .from("stk_transactions")
@@ -29,28 +29,27 @@ async function processStkPayment(transactionId) {
         .eq("ledger_posted", false)
         .eq("processing_lock", false)
         .select()
-        .single();
+        .maybeSingle();
 
-    if (lockError || !transaction) {
+    if (!transaction || lockError) {
         console.log("Transaction already processed, locked, or not found.");
         return;
     }
 
     try {
 
-        // ==============================
-        // 2️⃣ Only process SUCCESS
-        // ==============================
+        // =====================================
+        // 2️⃣ Only Process SUCCESS
+        // =====================================
 
         if (transaction.status !== "SUCCESS") {
-
             await unlockTransaction(transactionId);
             return;
         }
 
-        // ==============================
-        // 3️⃣ Fraud Detection Layer
-        // ==============================
+        // =====================================
+        // 3️⃣ Fraud Checks
+        // =====================================
 
         const fraudFlags = await runFraudChecks(transaction);
 
@@ -60,8 +59,8 @@ async function processStkPayment(transactionId) {
                 .from("stk_transactions")
                 .update({
                     status: "FLAGGED",
-                    processing_lock: false,
-                    fraud_flags: fraudFlags
+                    fraud_flags: fraudFlags,
+                    processing_lock: false
                 })
                 .eq("id", transactionId);
 
@@ -75,9 +74,9 @@ async function processStkPayment(transactionId) {
             return;
         }
 
-        // ==============================
-        // 4️⃣ Double Entry Ledger
-        // ==============================
+        // =====================================
+        // 4️⃣ Prepare Double Entry Ledger
+        // =====================================
 
         const ledgerEntries = [
             {
@@ -85,7 +84,8 @@ async function processStkPayment(transactionId) {
                 account_type: "cash",
                 entry_type: "DEBIT",
                 amount: transaction.amount,
-                reference: transactionId,
+                reference_id: transactionId,
+                reference_type: "STK",
                 created_at: new Date()
             },
             {
@@ -93,22 +93,38 @@ async function processStkPayment(transactionId) {
                 account_type: "revenue",
                 entry_type: "CREDIT",
                 amount: transaction.amount,
-                reference: transactionId,
+                reference_id: transactionId,
+                reference_type: "STK",
                 created_at: new Date()
             }
         ];
 
-        const { error: ledgerError } = await supabase
+        // =====================================
+        // 5️⃣ Insert Ledger (Idempotent Safe)
+        // =====================================
+
+        const { data: inserted, error: ledgerError } = await supabase
             .from("ledger_entries")
-            .insert(ledgerEntries);
+            .insert(ledgerEntries)
+            .select();
 
         if (ledgerError) {
-            throw ledgerError;
+            // If duplicate (unique index violation), assume already posted
+            if (ledgerError.code === "23505") {
+                console.log("Ledger already posted (duplicate prevented).");
+            } else {
+                throw ledgerError;
+            }
         }
 
-        // ==============================
-        // 5️⃣ Mark as Posted
-        // ==============================
+        // Integrity check
+        if (inserted && inserted.length !== 2) {
+            throw new Error("Ledger integrity failure.");
+        }
+
+        // =====================================
+        // 6️⃣ Mark Transaction Posted
+        // =====================================
 
         await supabase
             .from("stk_transactions")
@@ -119,9 +135,9 @@ async function processStkPayment(transactionId) {
             })
             .eq("id", transactionId);
 
-        // ==============================
-        // 6️⃣ Audit Log
-        // ==============================
+        // =====================================
+        // 7️⃣ Audit Log
+        // =====================================
 
         await createAuditLog(
             transaction.business_id,
@@ -129,11 +145,11 @@ async function processStkPayment(transactionId) {
             `Ledger posted for transaction ${transactionId}`
         );
 
-        console.log("Ledger posted successfully.");
+        console.log("STK Payment fully processed.");
 
     } catch (err) {
 
-        console.error("Ledger processing failed:", err.message);
+        console.error("Processing failed:", err.message);
 
         await unlockTransaction(transactionId);
 
@@ -141,11 +157,9 @@ async function processStkPayment(transactionId) {
     }
 }
 
-/*
-=====================================
-Helper: Unlock Transaction
-=====================================
-*/
+// =====================================
+// Helper: Unlock Transaction
+// =====================================
 
 async function unlockTransaction(transactionId) {
     await supabase
