@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Owner Dashboard</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+
+<body style="background:#f8fbff;">
+
+<nav style="display:flex;justify-content:space-between;align-items:center;padding:18px 40px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.04);">
+<h2>RevenuePilot</h2>
+<button id="logoutBtn" class="btn">Logout</button>
+</nav>
+
+<div class="dashboard-grid">
+
+<div class="card">
+<h3>Total Revenue</h3>
+<h1 id="totalRevenue">Loading...</h1>
+</div>
+
+</div>
+
+<script type="module">
+import { protectPage, logout } from "./js/auth.js";
+import API_BASE from "./config.js";
+
+await protectPage();
+
+document.getElementById("logoutBtn").addEventListener("click", logout);
+
+async function loadOwnerAnalytics(){
+    try{
+        const response = await fetch(`${API_BASE}/api/analytics/owner`);
+        const data = await response.json();
+
+        document.getElementById("totalRevenue").innerText =
+            response.ok ? (data.totalRevenue || 0) : "Error";
+
+    }catch(err){
+        console.error(err);
+        document.getElementById("totalRevenue").innerText = "Error";
+    }
+}
+
+await loadOwnerAnalytics();
+</script>
+
+</body>
+</html>
